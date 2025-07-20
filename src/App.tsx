@@ -1,12 +1,15 @@
 import { useState } from 'react';
 import { Zap, TrendingUp, Users, DollarSign, BarChart3, Target, Smartphone, Globe, ArrowRight, Play, CheckCircle, Star, Eye, Clock as Click, Calendar, Settings, Plus, Filter, Download, Share, X } from 'lucide-react';
-import { ConnectKitButton } from 'connectkit';
 import { ConnectWalletButton } from './components/ConnectKit';
+import { useWriteContract, useSimulateContract } from 'wagmi'
+import abi from '../abi/abi.json';
 
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [activeMetric, setActiveMetric] = useState('impressions');
   const [showCampaignForm, setShowCampaignForm] = useState(false);
+  const [simulateArgs, setSimulateArgs] = useState<readonly unknown[] | null>(null)
+  const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     metadataURI: '',
     budget: '',
@@ -15,6 +18,76 @@ function App() {
     startTime: '',
     endTime: ''
   });
+
+  
+
+
+  const [submissionStatus, setSubmissionStatus] = useState(null); // 'success' | 'error' | null
+
+// Optional: convert numeric inputs properly
+const parsedBudget = Number(formData.budget || 0);
+const parsedCostPerAction = Number(formData.costPerAction || 0);
+const parsedStartTime = formData.startTime ? new Date(formData.startTime).getTime() / 1000 : 0;
+const parsedEndTime = formData.endTime ? new Date(formData.endTime).getTime() / 1000 : 0;
+
+// const { config } = useWriteContract({
+//   // address: `0x${process.env.CONTRACT_ADDRESS}`,
+//   abi: abi,
+//   functionName: 'feed',
+//   enabled: Boolean(formData.metadataURI), // prevent calling too early
+//   args: [
+//     formData.metadataURI,
+//     parsedBudget,
+//     parsedCostPerAction,
+//     formData.costModel,
+//     parsedStartTime,
+//     parsedEndTime
+//   ]
+// });
+
+ 
+ const {
+    data,
+    error,
+    isPending: isSimulating
+  } = useSimulateContract({
+    address: '0xC0B08FB1611726A684069D0c878b70CC54e8570C',
+    abi,
+    functionName: 'createCampaign',
+    args: simulateArgs ?? undefined,
+    query: {
+      enabled: Boolean(formData.metadataURI),
+    },
+  });
+
+  // ✅ Write contract
+  const { writeContractAsync } = useWriteContract();
+
+  
+const handleSubmit = async (e) => {
+  e.preventDefault();
+
+  try {
+    const args = [
+      formData.metadataURI,
+      BigInt(formData.budget),
+      BigInt(formData.costPerAction),
+      BigInt(formData.costModel),
+      BigInt(new Date(formData.startTime).getTime() / 1000),
+      BigInt(new Date(formData.endTime).getTime() / 1000),
+    ];
+
+    setSimulateArgs(args); // 👈 Trigger simulation only
+
+    setSubmissionStatus('simulating');
+  } catch (err) {
+    console.error('Failed to prepare simulation args:', err);
+    setSubmissionStatus('error');
+  }
+};
+
+
+
 
   const mockCampaigns = [
     { id: 1, name: 'TaskFlow Pro', status: 'Active', impressions: 125000, clicks: 3200, spend: 450, revenue: 1250 },
@@ -92,134 +165,124 @@ function App() {
   );
 
   const CampaignForm = () => (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-y-auto">
         <div className="p-6 border-b border-gray-200">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold text-gray-900">Create New Campaign</h2>
-            <button 
-              onClick={() => setShowCampaignForm(false)}
+            <button
+              onClick={() => {
+                setShowCampaignForm(false);
+                setSubmissionStatus(null);
+              }}
               className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
             >
               <X size={20} className="text-gray-500" />
             </button>
           </div>
         </div>
-        
-        <form className="p-6 space-y-6">
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {submissionStatus === 'success' && (
+            <div className="bg-green-100 text-green-800 px-4 py-3 rounded-md">
+              ✅ Campaign successfully created!
+            </div>
+          )}
+          {submissionStatus === 'error' && (
+            <div className="bg-red-100 text-red-800 px-4 py-3 rounded-md">
+              ❌ Failed to create campaign. Please try again.
+            </div>
+          )}
+          {error && (
+            <div className="bg-yellow-100 text-yellow-800 px-4 py-2 rounded-md">
+              ⚠️ Simulation failed: {error.message}
+            </div>
+          )}
+
+          {/* Form fields */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              AD URI
-            </label>
+            <label className="block text-sm font-medium text-gray-700 mb-2">AD URI</label>
             <input
               type="url"
               value={formData.metadataURI}
-              onChange={(e) => setFormData({...formData, metadataURI: e.target.value})}
+              onChange={(e) => setFormData({ ...formData, metadataURI: e.target.value })}
               placeholder="https://example.com/metadata.json"
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+              className="w-full px-4 py-3 border border-gray-300 rounded-lg"
             />
-            <p className="text-xs text-gray-500 mt-1">ad URI</p>
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Budget ($)
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Budget ($)</label>
               <input
                 type="number"
                 value={formData.budget}
-                onChange={(e) => setFormData({...formData, budget: e.target.value})}
-                placeholder="1000"
+                onChange={(e) => setFormData({ ...formData, budget: e.target.value })}
                 min="0"
                 step="0.01"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg"
               />
             </div>
-            
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Cost Per Action ($)
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Cost Per Action ($)</label>
               <input
                 type="number"
                 value={formData.costPerAction}
-                onChange={(e) => setFormData({...formData, costPerAction: e.target.value})}
-                placeholder="0.50"
+                onChange={(e) => setFormData({ ...formData, costPerAction: e.target.value })}
                 min="0"
                 step="0.01"
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Cost Model
-            </label>
-            <select
-              value={formData.costModel}
-              onChange={(e) => setFormData({...formData, costModel: e.target.value})}
-              className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
-            >
-              <option value="CPM">CPM (Cost Per Mille - 1000 impressions)</option>
-              <option value="CPC">CPC (Cost Per Click)</option>
-            </select>
-          </div>
+  <label className="block text-sm font-medium text-gray-700 mb-2">Cost Model</label>
+  <select
+    value={formData.costModel}
+    onChange={(e) => setFormData({ ...formData, costModel: Number(e.target.value) })}
+    className="w-full px-4 py-3 border border-gray-300 rounded-lg"
+  >
+    <option value={1}>CPM</option>
+    <option value={2}>CPC</option>
+  </select>
+</div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Start Time
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Start Time</label>
               <input
                 type="datetime-local"
                 value={formData.startTime}
-                onChange={(e) => setFormData({...formData, startTime: e.target.value})}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                onChange={(e) => setFormData({ ...formData, startTime: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg"
               />
             </div>
-            
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                End Time
-              </label>
+              <label className="block text-sm font-medium text-gray-700 mb-2">End Time</label>
               <input
                 type="datetime-local"
                 value={formData.endTime}
-                onChange={(e) => setFormData({...formData, endTime: e.target.value})}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                onChange={(e) => setFormData({ ...formData, endTime: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg"
               />
             </div>
           </div>
 
-          <div className="flex items-center justify-end gap-4 pt-4 border-t border-gray-200">
+          <div className="flex justify-end gap-4 pt-4 border-t border-gray-200">
             <button
               type="button"
               onClick={() => setShowCampaignForm(false)}
-              className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+              className="px-6 py-3 border border-gray-300 text-gray-700 rounded-lg"
             >
               Cancel
             </button>
             <button
               type="submit"
-              onClick={(e) => {
-                e.preventDefault();
-                console.log('Campaign data:', formData);
-                setShowCampaignForm(false);
-                // Reset form
-                setFormData({
-                  metadataURI: '',
-                  budget: '',
-                  costPerAction: '',
-                  costModel: 'CPM',
-                  startTime: '',
-                  endTime: ''
-                });
-              }}
-              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-medium hover:shadow-lg transition-all"
+              disabled={!data?.request || isSimulating}
+              className="px-6 py-3 bg-gradient-to-r from-purple-600 to-blue-600 text-white rounded-lg font-medium"
             >
-              Create Campaign
+              {isSimulating ? 'Preparing...' : 'Create Campaign'}
             </button>
           </div>
         </form>
